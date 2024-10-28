@@ -12,13 +12,13 @@ SAMPLE_RATE = 44100
 FRAMES_PER_BUFFER = 2048
 
 # Set maximum buffer size to hold up to 2 seconds of audio data, lower buffer size means lower latency but prone to underflow.
-MAX_BUFFER_SIZE = SAMPLE_RATE * 2
+MAX_BUFFER_SIZE = SAMPLE_RATE * 1
 
 # Initialize a deque for audio data buffering with a max length of MAX_BUFFER_SIZE.
 audio_buffer = deque(maxlen=MAX_BUFFER_SIZE)
 
 # Create a buffer array to hold audio data fetched from the deque (initialization).
-fetched_buffer = np.zeros(FRAMES_PER_BUFFER, dtype=np.float32)
+fetched_buffer = np.zeros(FRAMES_PER_BUFFER, dtype=np.int16)
 
 # Overflow offset to adjust buffer size dynamically, flag to detect issues, and flag to start calculations.
 overflow_offset = 0
@@ -40,12 +40,15 @@ def gen_sine_wave(freq, sample_rate=SAMPLE_RATE, frames_per_buffer=FRAMES_PER_BU
   samples = int(sample_rate / freq)
 
   # Create one cycle of the sine wave based on frequency and sample rate.
-  wave = np.sin(2 * np.pi * np.arange(samples) * freq / sample_rate)
+  wave = 0.5 * np.sin(2 * np.pi * np.arange(samples) * freq / sample_rate)
 
   # Repeat the wave to fill at least one buffer's worth of data.
   while len(wave) < frames_per_buffer:
     # Double the length of wave each time to reach the required frames per buffer.
     wave = np.tile(wave, 2)
+
+  # astype int16 to convert the wave to the correct format for pyaudio.
+  wave = (wave * 32767).astype(np.int16)
 
   return wave
 
@@ -72,14 +75,14 @@ def audio_callback(in_data, frame_count, time_info, status):
     overflow_offset = 0
 
     # Return the empty buffer to prevent playback disruption.
-    return (fetched_buffer, pyaudio.paContinue)
+    return (fetched_buffer.tobytes(), pyaudio.paContinue)
 
   # Populate fetched_buffer with data from audio_buffer using popleft to maintain deque order.
   fetched_buffer = np.array(
-      list(starmap(audio_buffer.popleft, repeat((), frame_count))), dtype=np.float32)
+      list(starmap(audio_buffer.popleft, repeat((), frame_count))), dtype=np.int16)
 
   # Return the filled buffer to play the audio.
-  return (fetched_buffer, pyaudio.paContinue)
+  return (fetched_buffer.tobytes(), pyaudio.paContinue)
 
 
 # Initialize webcam video capture.
@@ -92,7 +95,7 @@ p = pyaudio.PyAudio()
 time.sleep(1)
 
 # Open an audio stream with specified settings.
-audio_stream = p.open(format=pyaudio.paFloat32,
+audio_stream = p.open(format=pyaudio.paInt16,
                       channels=1,
                       rate=SAMPLE_RATE,
                       output=True,
